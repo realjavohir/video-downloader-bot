@@ -1,63 +1,41 @@
-import os
 import asyncio
-from aiogram import Bot, Dispatcher, types
-from aiogram.utils import executor
-import yt_dlp
+import subprocess
+import os
 
-BOT_TOKEN = "8383539672:AAHrMHQobXR8LptpiLpdD5kDwPsUxV2rQIU"
+from aiogram import Bot, Dispatcher, types
+from aiogram.filters import CommandStart
+
+BOT_TOKEN = os.getenv("8383539672:AAHrMHQobXR8LptpiLpdD5kDwPsUxV2rQIU")
 
 bot = Bot(token=BOT_TOKEN)
-dp = Dispatcher(bot)
+dp = Dispatcher()
 
-DOWNLOAD_DIR = "downloads"
-os.makedirs(DOWNLOAD_DIR, exist_ok=True)
+@dp.message(CommandStart())
+async def start(message: types.Message):
+    await message.answer("🎥 Video link yuboring (YouTube / TikTok / Instagram)")
 
-
-def download_video(url: str):
-    ydl_opts = {
-        "outtmpl": f"{DOWNLOAD_DIR}/%(title)s.%(ext)s",
-        "format": "bestvideo+bestaudio/best",
-        "merge_output_format": "mp4",
-        "noplaylist": True,
-        "quiet": True,
-        "socket_timeout": 30,
-        "concurrent_fragment_downloads": 8,  # ⚡ tez yuklash
-    }
-
-    with yt_dlp.YoutubeDL(ydl_opts) as ydl:
-        info = ydl.extract_info(url, download=True)
-        file_path = ydl.prepare_filename(info)
-        return file_path
-
-
-@dp.message_handler(commands=["start"])
-async def start(msg: types.Message):
-    await msg.answer(
-        "🎬 Video Download Bot\n\n"
-        "TikTok / Instagram / YouTube link yuboring\n"
-        "Katta videolarni ham tez yuklab beraman 🚀"
-    )
-
-
-@dp.message_handler(lambda m: m.text.startswith("http"))
-async def handle_link(msg: types.Message):
-    await msg.answer("⏳ Video yuklanmoqda, kuting...")
+@dp.message()
+async def download(message: types.Message):
+    url = message.text.strip()
+    await message.answer("⏳ Yuklanmoqda...")
 
     try:
-        loop = asyncio.get_event_loop()
-        file_path = await loop.run_in_executor(None, download_video, msg.text)
+        cmd = [
+            "yt-dlp",
+            "-f", "mp4",
+            "-o", "video.mp4",
+            url
+        ]
+        subprocess.run(cmd, check=True)
 
-        if os.path.getsize(file_path) > 49 * 1024 * 1024:
-            await msg.answer("❗ Video juda katta (50MB+). Fayl sifatida yuborilmoqda")
-            await bot.send_document(msg.chat.id, open(file_path, "rb"))
-        else:
-            await bot.send_video(msg.chat.id, open(file_path, "rb"))
+        await message.answer_video(types.FSInputFile("video.mp4"))
+        os.remove("video.mp4")
 
-        os.remove(file_path)
+    except Exception:
+        await message.answer("❌ Video yuklab bo‘lmadi")
 
-    except Exception as e:
-        await msg.answer(f"❌ Xatolik:\n{e}")
-
+async def main():
+    await dp.start_polling(bot)
 
 if __name__ == "__main__":
-    executor.start_polling(dp)
+    asyncio.run(main())

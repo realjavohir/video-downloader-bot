@@ -1,69 +1,63 @@
 import os
 import asyncio
 from aiogram import Bot, Dispatcher, types
-from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton
 from aiogram.utils import executor
 import yt_dlp
 
-BOT_TOKEN = os.getenv("8383539672:AAHrMHQobXR8LptpiLpdD5kDwPsUxV2rQIU")
-
-DOWNLOAD_DIR = "downloads"
-os.makedirs(DOWNLOAD_DIR, exist_ok=True)
+BOT_TOKEN = "8383539672:AAHrMHQobXR8LptpiLpdD5kDwPsUxV2rQIU"
 
 bot = Bot(token=BOT_TOKEN)
 dp = Dispatcher(bot)
 
-def ydl_opts(video=True):
-    opts = {
-        "outtmpl": f"{DOWNLOAD_DIR}/%(title)s.%(ext)s",
-        "quiet": True,
-        "noplaylist": True,
-        "concurrent_fragment_downloads": 8,
-    }
-    if video:
-        opts["format"] = "bestvideo+bestaudio/best"
-        opts["merge_output_format"] = "mp4"
-    else:
-        opts["format"] = "bestaudio"
-        opts["postprocessors"] = [{
-            "key": "FFmpegExtractAudio",
-            "preferredcodec": "mp3",
-            "preferredquality": "192",
-        }]
-    return opts
+DOWNLOAD_DIR = "downloads"
+os.makedirs(DOWNLOAD_DIR, exist_ok=True)
 
-def download(url, video=True):
-    with yt_dlp.YoutubeDL(ydl_opts(video)) as ydl:
+
+def download_video(url: str):
+    ydl_opts = {
+        "outtmpl": f"{DOWNLOAD_DIR}/%(title)s.%(ext)s",
+        "format": "bestvideo+bestaudio/best",
+        "merge_output_format": "mp4",
+        "noplaylist": True,
+        "quiet": True,
+        "socket_timeout": 30,
+        "concurrent_fragment_downloads": 8,  # ⚡ tez yuklash
+    }
+
+    with yt_dlp.YoutubeDL(ydl_opts) as ydl:
         info = ydl.extract_info(url, download=True)
-        return ydl.prepare_filename(info)
+        file_path = ydl.prepare_filename(info)
+        return file_path
+
 
 @dp.message_handler(commands=["start"])
 async def start(msg: types.Message):
-    await msg.answer("🎬 Video downloader bot\nLink yuboring")
+    await msg.answer(
+        "🎬 Video Download Bot\n\n"
+        "TikTok / Instagram / YouTube link yuboring\n"
+        "Katta videolarni ham tez yuklab beraman 🚀"
+    )
+
 
 @dp.message_handler(lambda m: m.text.startswith("http"))
-async def choose(msg: types.Message):
-    kb = InlineKeyboardMarkup()
-    kb.add(
-        InlineKeyboardButton("🎥 Video", callback_data=f"v|{msg.text}"),
-        InlineKeyboardButton("🎧 MP3", callback_data=f"a|{msg.text}")
-    )
-    await msg.answer("Tanlang:", reply_markup=kb)
+async def handle_link(msg: types.Message):
+    await msg.answer("⏳ Video yuklanmoqda, kuting...")
 
-@dp.callback_query_handler(lambda c: c.data.startswith(("v|","a|")))
-async def handle(call: types.CallbackQuery):
-    t, url = call.data.split("|")
-    await call.message.edit_text("⏳ Yuklanmoqda...")
+    try:
+        loop = asyncio.get_event_loop()
+        file_path = await loop.run_in_executor(None, download_video, msg.text)
 
-    loop = asyncio.get_event_loop()
-    path = await loop.run_in_executor(None, download, url, t == "v")
+        if os.path.getsize(file_path) > 49 * 1024 * 1024:
+            await msg.answer("❗ Video juda katta (50MB+). Fayl sifatida yuborilmoqda")
+            await bot.send_document(msg.chat.id, open(file_path, "rb"))
+        else:
+            await bot.send_video(msg.chat.id, open(file_path, "rb"))
 
-    if t == "v":
-        await bot.send_document(call.message.chat.id, open(path,"rb"))
-    else:
-        await bot.send_audio(call.message.chat.id, open(path,"rb"))
+        os.remove(file_path)
 
-    os.remove(path)
+    except Exception as e:
+        await msg.answer(f"❌ Xatolik:\n{e}")
+
 
 if __name__ == "__main__":
     executor.start_polling(dp)
